@@ -1,12 +1,26 @@
 
+import json
 from datetime import datetime
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
 
+TOKEN = "test-graph-analyst-token-that-is-long-enough-123456"
 
-client = TestClient(app)
+client = TestClient(
+    app,
+    headers={"Authorization": f"Bearer {TOKEN}"},
+)
+
+
+@pytest.fixture(autouse=True)
+def configure_graph_auth(monkeypatch):
+    monkeypatch.setenv(
+        "FRAUD_GRAPH_ANALYST_TOKENS",
+        json.dumps({TOKEN: "ANALYST-001"}),
+    )
 
 
 def test_graph_edges_include_explainability_metadata():

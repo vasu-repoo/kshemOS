@@ -105,7 +105,10 @@ def require_graph_analyst(
 
 
 @router.get("/ring/{account_id}", response_model=RingLookupResponse)
-def ring_lookup(account_id: str):
+def ring_lookup(
+    account_id: str,
+    analyst_id: str = Depends(require_graph_analyst),
+):
     return get_ring_info(account_id)
 
 

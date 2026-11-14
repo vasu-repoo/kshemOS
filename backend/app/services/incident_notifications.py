@@ -547,6 +547,10 @@ def dispatch_incident_notifications(
 
     return dispatched_outcomes
 
+def get_notification(notification_id: str) -> dict[str, Any] | None:
+    with _lock:
+        notification = _NOTIFICATIONS.get(notification_id)
+        return dict(notification) if notification is not None else None
 
 def retry_notification(notification_id: str, force_success: bool = True) -> dict[str, Any]:
     """Retries delivery of a failed or retrying notification."""
@@ -654,3 +658,11 @@ def set_simulated_failure(target_key: str, enable: bool = True):
             _SIMULATE_FAILURES.add(target_key)
         else:
             _SIMULATE_FAILURES.discard(target_key)
+
+
+def get_registered_officer(officer_id: str) -> dict[str, Any] | None:
+    """Return only an officer already present in the trusted directory."""
+    with _lock:
+        officer = _OFFICERS.get(officer_id)
+        return dict(officer) if officer is not None else None
+
