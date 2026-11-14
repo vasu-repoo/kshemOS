@@ -65,6 +65,24 @@ _incidents: dict[str, dict[str, Any]] = {}
 
 _staffing: dict[str, int] = {region: 0 for region in REGIONS}
 
+_SAMPLE_EVIDENCE_INCIDENTS = (
+    {
+        "id": "INC-EVIDENCE-DELHI-01",
+        "report_id": "CASE-2026-DELHI-01",
+        "title": "Delhi digital arrest and financial fraud evidence",
+        "description": "Investigation of digital arrest impersonation and related financial fraud.",
+        "category": "digital_arrest",
+        "region": "Central Zone",
+    },
+    {
+        "id": "INC-EVIDENCE-NCR-02",
+        "report_id": "CASE-2026-NCR-02",
+        "title": "NCR counterfeit currency evidence",
+        "description": "Investigation of counterfeit currency seized during a field operation.",
+        "category": "counterfeit_currency",
+        "region": "North Zone",
+    },
+)
 
 
 
@@ -72,6 +90,33 @@ _staffing: dict[str, int] = {region: 0 for region in REGIONS}
 def _now_ms() -> int:
 
     return int(time.time() * 1000)
+
+
+def seed_sample_evidence_incidents() -> None:
+    """Register the explicit, jurisdiction-scoped incidents that own sample evidence."""
+    now = _now_ms()
+    with _lock:
+        for sample in _SAMPLE_EVIDENCE_INCIDENTS:
+            _incidents.setdefault(
+                sample["id"],
+                {
+                    **sample,
+                    "severity": "medium",
+                    "previous_severity": None,
+                    "status": "in_progress",
+                    "assigned_to": None,
+                    "linked_account": None,
+                    "opened_at": now,
+                    "first_response_at": None,
+                    "resolved_at": None,
+                    "updated_at": now,
+                    "version": 1,
+                    "notes": [],
+                },
+            )
+
+
+seed_sample_evidence_incidents()
 
 
 

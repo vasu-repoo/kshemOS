@@ -123,6 +123,7 @@ DEFAULT_SAMPLE_EVIDENCE = [
     {
         "id": "EVID-2026-00101",
         "case_id": "CASE-2026-DELHI-01",
+        "incident_id": "INC-EVIDENCE-DELHI-01",
         "title": "Digital Arrest Extortion Call Audio Intercept",
         "description": "Audio recording of fraudster impersonating CBI Chief Officer demanding immediate RTGS.",
         "evidence_type": "audio_recording",
@@ -145,6 +146,7 @@ DEFAULT_SAMPLE_EVIDENCE = [
     {
         "id": "EVID-2026-00102",
         "case_id": "CASE-2026-DELHI-01",
+        "incident_id": "INC-EVIDENCE-DELHI-01",
         "title": "Forged Supreme Court Arrest Warrant Notice",
         "description": "PDF notice delivered via WhatsApp displaying counterfeit Supreme Court seal and fake digital sign.",
         "evidence_type": "document",
@@ -167,6 +169,7 @@ DEFAULT_SAMPLE_EVIDENCE = [
     {
         "id": "EVID-2026-00103",
         "case_id": "CASE-2026-DELHI-01",
+        "incident_id": "INC-EVIDENCE-DELHI-01",
         "title": "Mule Bank RTGS Transfer Receipt Slip",
         "description": "Victim's bank transfer debit advice of INR 4,80,000 sent to suspected mule account ACC-1002.",
         "evidence_type": "transaction_receipt",
@@ -188,6 +191,7 @@ DEFAULT_SAMPLE_EVIDENCE = [
     {
         "id": "EVID-2026-00104",
         "case_id": "CASE-2026-NCR-02",
+        "incident_id": "INC-EVIDENCE-NCR-02",
         "title": "Counterfeit ₹500 Banknote High-Resolution Optical Scan",
         "description": "Multi-spectrum optical scan of counterfeit Mahatma Gandhi New Series note seized in Saket.",
         "evidence_type": "image_screenshot",
@@ -235,7 +239,8 @@ def _ingest_internal(data: dict[str, Any]) -> dict[str, Any]:
 
     evidence_item = {
         "id": e_id,
-        "case_id": data.get("case_id", "CASE-GENERAL-01"),
+        "case_id": data.get("case_id") or data.get("case_number") or "CASE-GENERAL-01",
+        "incident_id": data.get("incident_id"),
         "title": data["title"],
         "description": data.get("description", ""),
         "evidence_type": data.get("evidence_type", "document"),
@@ -509,9 +514,7 @@ def generate_forensic_export_bundle(
     with _lock:
         evidence_list = [i for i in _evidence_store.values() if i["case_id"] == case_id]
         if not evidence_list:
-            # Fallback to general evidence if none matches specific case
-            evidence_list = list(_evidence_store.values())[:3]
-            case_id = evidence_list[0]["case_id"] if evidence_list else case_id
+            return None
 
         bundle_id = f"BUNDLE-CRIM-{time.strftime('%Y%m%d', time.gmtime())}-{next(_bundle_counter):03d}"
         now = _now_ms()

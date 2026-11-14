@@ -3,8 +3,11 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.services import incidents
+from app import security
 
-client = TestClient(app)
+TOKEN = "test-token-that-is-long-enough-for-security-123456"
+
+client = TestClient(app, headers={"Authorization": f"Bearer {TOKEN}"})
 
 DIGITAL_ARREST = (
     "This is the CBI. You are under digital arrest. Do not tell anyone. "
@@ -13,30 +16,43 @@ DIGITAL_ARREST = (
 
 
 @pytest.fixture(autouse=True)
-def clean_store():
+def clean_store(monkeypatch):
+    monkeypatch.setenv(
+        "KSHEMOS_API_TOKENS",
+        f'{{"{TOKEN}": "OFF-CMD-METRO"}}',
+    )
+    monkeypatch.setattr(
+        security.incident_notifications,
+        "get_registered_officer",
+        lambda officer_id: {
+            "officer_id": "OFF-CMD-METRO",
+            "role": "commander",
+            "jurisdiction_id": "JUR-DELHI-METRO",
+            "regions": ["North Zone", "East Zone", "Central Zone", "Unspecified"],
+        } if officer_id == "OFF-CMD-METRO" else None,
+    )
     incidents.reset()
     yield
     incidents.reset()
-
 
 def test_feed_starts_empty_with_zero_staffing():
     body = client.get("/api/incidents").json()
 
     assert body["incidents"] == []
-    assert body["regions"] == incidents.REGIONS
+    assert body["regions"] == ["North Zone", "East Zone", "Central Zone"]
     assert all(s["officers_on_duty"] == 0 for s in body["staffing"])
 
 
 def test_created_incident_appears_in_feed_with_scored_severity():
     res = client.post(
         "/api/incidents",
-        json={"category": "scam_call", "description": DIGITAL_ARREST, "region": "West Zone"},
+        json={"category": "scam_call", "description": DIGITAL_ARREST, "region": "East Zone"},
     )
     assert res.status_code == 201
     created = res.json()
 
     assert created["status"] == "new"
-    assert created["region"] == "West Zone"
+    assert created["region"] == "East Zone"
     assert created["severity"] in ("high", "critical")
     assert created["first_response_at"] is None
 
@@ -101,14 +117,14 @@ def test_update_rejects_invalid_values_and_unknown_incidents():
 
 
 def test_staffing_updates_and_validation():
-    res = client.put("/api/incidents/staffing/West Zone", json={"officers_on_duty": 3})
+    res = client.put("/api/incidents/staffing/East Zone", json={"officers_on_duty": 3})
     assert res.status_code == 200
 
     staffing = {s["region"]: s["officers_on_duty"] for s in client.get("/api/incidents").json()["staffing"]}
-    assert staffing["West Zone"] == 3
+    assert staffing["East Zone"] == 3
 
-    assert client.put("/api/incidents/staffing/Mars", json={"officers_on_duty": 1}).status_code == 404
-    assert client.put("/api/incidents/staffing/West Zone", json={"officers_on_duty": -1}).status_code == 422
+    assert client.put("/api/incidents/staffing/Mars", json={"officers_on_duty": 1}).status_code == 403
+    assert client.put("/api/incidents/staffing/East Zone", json={"officers_on_duty": -1}).status_code == 422
 
 
 def test_derive_title_truncates_long_first_sentence():

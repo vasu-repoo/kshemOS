@@ -15,29 +15,58 @@ from __future__ import annotations
 
 import time
 import pytest
+from fastapi.security import HTTPAuthorizationCredentials
+from app import security
 from app.models import (
     CreateUploadLinkRequest,
     RevokeUploadLinkRequest,
     UploadEvidenceViaLinkRequest,
 )
 from app.routers import evidence as evidence_router
+from app.services import incidents
 from app.services import evidence as evidence_service
 from app.services import evidence_upload_link as link_service
+
+TOKEN = "evidence-upload-test-token-that-is-long-enough-123456"
 
 
 @pytest.fixture(autouse=True)
 def clean_state():
     evidence_service.reset()
     link_service.reset()
+    incidents.reset()
+    incidents.seed_sample_evidence_incidents()
     yield
     evidence_service.reset()
     link_service.reset()
+    incidents.reset()
 
 
-def test_create_upload_link_bound_to_report():
+@pytest.fixture
+def principal(monkeypatch):
+    monkeypatch.setenv(
+        "KSHEMOS_API_TOKENS",
+        f'{{"{TOKEN}": "OFF-SUP-DELHI"}}',
+    )
+    return security.get_current_principal(
+        HTTPAuthorizationCredentials(scheme="Bearer", credentials=TOKEN)
+    )
+
+
+@pytest.fixture
+def incident_id():
+    incident = incidents.create_incident(
+        category="other",
+        description="Secure evidence upload test incident.",
+        region="Central Zone",
+    )
+    return incident["id"]
+
+
+def test_create_upload_link_bound_to_report(principal, incident_id):
     req = CreateUploadLinkRequest(
         report_id="RPT-0001",
-        incident_id="INC-001",
+        incident_id=incident_id,
         title="WhatsApp Digital Arrest Video Recording",
         description="Please provide screen recording of extortion call.",
         allowed_file_types=["video/mp4", "audio/wav", "application/pdf"],
@@ -48,17 +77,17 @@ def test_create_upload_link_bound_to_report():
         officer_name="Inspector R. Kumar",
         recipient_email="victim@example.com",
     )
-    link = evidence_router.create_upload_link(req)
+    link = evidence_router.create_upload_link(req, principal=principal)
 
     assert link["link_id"].startswith("UPL-")
     assert len(link["token"]) >= 20
     assert link["report_id"] == "RPT-0001"
-    assert link["incident_id"] == "INC-001"
+    assert link["incident_id"] == incident_id
     assert link["status"] == "active"
     assert link["is_expired"] is False
     assert link["allowed_file_types"] == ["video/mp4", "audio/wav", "application/pdf"]
     assert link["max_file_size_bytes"] == 30 * 1024 * 1024
-    assert link["created_by_badge"] == "INSP-KUMAR-771"
+    assert link["created_by_badge"] == principal.officer_id
     assert link["upload_url"].startswith("/evidence/upload?token=")
 
 
@@ -114,10 +143,10 @@ def test_passcode_verification():
     assert val3["status"] == "active"
 
 
-def test_upload_fulfillment_and_vault_chain_of_custody():
+def test_upload_fulfillment_and_vault_chain_of_custody(incident_id):
     req = CreateUploadLinkRequest(
         report_id="RPT-0001",
-        incident_id="INC-001",
+        incident_id=incident_id,
         title="Extortion Call Audio",
         allowed_file_types=["audio/wav", "audio/mpeg"],
         max_file_size_bytes=10 * 1024 * 1024,
@@ -206,9 +235,10 @@ def test_file_type_and_size_restrictions():
     assert "exceeds limit" in str(exc_info2.value).lower()
 
 
-def test_authorised_officer_revocation():
+def test_authorised_officer_revocation(principal, incident_id):
     req = CreateUploadLinkRequest(
         report_id="RPT-0009",
+        incident_id=incident_id,
         title="Suspect SMS Evidence",
     )
     link = link_service.create_upload_link(req.model_dump())
@@ -221,9 +251,11 @@ def test_authorised_officer_revocation():
         officer_name="Commander Singh",
         revocation_reason="Complainant contacted precinct; phone seized physically under Section 102 CrPC.",
     )
-    revoked = evidence_router.revoke_upload_link(link_id, revoke_req)
+    revoked = evidence_router.revoke_upload_link(
+        link_id, revoke_req, principal=principal
+    )
     assert revoked["status"] == "revoked"
-    assert revoked["revoked_by_badge"] == "COMM-SINGH-01"
+    assert revoked["revoked_by_badge"] == principal.officer_id
     assert "Section 102" in revoked["revocation_reason"]
 
     # Validate token reports revoked

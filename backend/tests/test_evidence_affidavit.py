@@ -15,18 +15,38 @@ from app.models import (
     EvidenceIngestRequest,
     Section63AffidavitRequest,
 )
+from app import security
 from app.routers import evidence as evidence_router
 from app.routers import evidence_affidavit as affidavit_router
+from app.services import incidents
 from app.services import evidence as evidence_service
 from app.services import evidence_affidavit as affidavit_service
+
+TOKEN = "evidence-affidavit-test-token-1234567890"
 
 
 @pytest.fixture(autouse=True)
 def clean_vault_state():
     """Reset evidence vault state before each test."""
     evidence_service.reset()
+    incidents.reset()
+    incidents.seed_sample_evidence_incidents()
     yield
     evidence_service.reset()
+    incidents.reset()
+
+
+@pytest.fixture
+def principal(monkeypatch):
+    from fastapi.security import HTTPAuthorizationCredentials
+
+    monkeypatch.setenv(
+        "KSHEMOS_API_TOKENS",
+        f'{{"{TOKEN}": "OFF-SUP-DELHI"}}',
+    )
+    return security.get_current_principal(
+        HTTPAuthorizationCredentials(scheme="Bearer", credentials=TOKEN)
+    )
 
 
 def test_get_ntp_status():
@@ -104,14 +124,20 @@ def test_compile_section63_affidavit_success():
     assert "Schedule-A: Inventory of Electronic Evidence Exhibits" in res["court_printable_html"]
 
 
-def test_tamper_gate_blocks_affidavit_generation():
+def test_tamper_gate_blocks_affidavit_generation(principal):
     """
     CRITICAL GATE TEST:
     Verify that if ANY artifact in the case bundle fails cryptographic hash chain validation,
     affidavit generation is BLOCKED and raises HTTP 422 with diagnostic details.
     """
     # 1. Ingest a new clean evidence item
+    incident = incidents.create_incident(
+        category="other",
+        description="Affidavit tamper-test incident.",
+        region="Central Zone",
+    )
     ingest_req = EvidenceIngestRequest(
+        incident_id=incident["id"],
         case_id="CASE-TAMPER-TEST-01",
         category="digital_arrest",
         title="Tamper Test Audio Intercept",
@@ -120,7 +146,7 @@ def test_tamper_gate_blocks_affidavit_generation():
         file_name="digital_arrest_call_01.wav",
         officer_badge_id="OFF-TEST-IO",
     )
-    created = evidence_router.ingest_evidence(ingest_req)
+    created = evidence_router.ingest_evidence(ingest_req, principal=principal)
     ev_id = created["id"]
 
     # Verify initially valid
